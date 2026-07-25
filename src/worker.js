@@ -1,31 +1,41 @@
-// Cloudflare Pages Functions —— /api/links
-// 导航页链接云端同步后端（Cloudflare KV 存储）
+// Cloudflare Worker —— 导航页后端
+// 静态资源由 [assets] 托管（public/ 目录），本 Worker 只处理 /api/links
 //
 // GET  /api/links   所有人可读，返回 { sites, folders, theme, updatedAt }
-// PUT  /api/links   需请求头 X-Admin-Token 与环境变量 ADMIN_TOKEN 一致
+// PUT  /api/links   需请求头 X-Admin-Token 与 Secret ADMIN_TOKEN 一致
 //
-// 需要在 Pages 项目中配置：
-//   1. KV 命名空间绑定：变量名 LINKS_KV
-//   2. 环境变量：ADMIN_TOKEN = 你的管理员密码
+// 配置：wrangler.toml 中的 [[kv_namespaces]] 绑定 LINKS_KV
+// 密钥：wrangler secret put ADMIN_TOKEN
 
 const KV_KEY = 'navlinks_v1';
 
-export async function onRequestGet(context) {
-  const { env } = context;
-  if (!env.LINKS_KV) return json({ error: 'KV 未绑定 LINKS_KV' }, 503);
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
 
+    if (url.pathname === '/api/links') {
+      if (request.method === 'GET') return handleGet(env);
+      if (request.method === 'PUT') return handlePut(request, env);
+      return json({ error: 'method not allowed' }, 405);
+    }
+
+    // 其余路径交给静态资源（index.html 等）
+    return env.ASSETS.fetch(request);
+  }
+};
+
+async function handleGet(env) {
+  if (!env.LINKS_KV) return json({ error: 'KV 未绑定 LINKS_KV' }, 503);
   const raw = await env.LINKS_KV.get(KV_KEY);
   if (!raw) return json({ sites: [], folders: [], theme: 'dark', updatedAt: 0 });
-
   return new Response(raw, {
     headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
   });
 }
 
-export async function onRequestPut(context) {
-  const { request, env } = context;
+async function handlePut(request, env) {
   if (!env.LINKS_KV) return json({ error: 'KV 未绑定 LINKS_KV' }, 503);
-  if (!env.ADMIN_TOKEN) return json({ error: '服务端未配置 ADMIN_TOKEN 环境变量' }, 503);
+  if (!env.ADMIN_TOKEN) return json({ error: '服务端未配置 ADMIN_TOKEN' }, 503);
 
   const token = request.headers.get('X-Admin-Token') || '';
   if (token !== env.ADMIN_TOKEN) return json({ error: 'unauthorized' }, 401);
