@@ -1,0 +1,6 @@
+name = "my-navigation-page"
+pages_build_output_dir = "."
+
+[[kv_namespaces]]
+binding = "LINKS_KV"
+id = "e948692deb6640c3a20870996baa3beb"

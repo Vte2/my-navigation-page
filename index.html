@@ -486,6 +486,7 @@ body.has-bg .desktop-grid{}
     </button>
     <button class="theme-btn perf-btn" id="perfBtn" title="性能/高刷模式">L</button>
     <button class="theme-btn spring-btn" id="springBtn" title="弹簧跟随">S</button>
+    <button class="theme-btn" id="syncBtn" title="云端同步未解锁（点击输入管理员密码）">🔒</button>
   </div>
 </div>
 
@@ -1154,7 +1155,72 @@ function initDef(){
   sites=DEF_SITES.map(s=>({id:uid(),name:s.n,url:s.u,folder:s.f,iconType:'auto',iconText:''}));
   folders=[...new Set(sites.map(s=>s.folder||'').filter(Boolean))];
 }
-function save(){localStorage.setItem(DK,JSON.stringify({sites,folders,theme}))}
+function saveLocal(){localStorage.setItem(DK,JSON.stringify({sites,folders,theme}))}
+function save(){saveLocal();pushToCloud()}
+
+/* ---------- Cloudflare KV 云端同步 ---------- */
+const ADMIN_KEY='navAdminToken';   // localStorage 里存管理员密码（仅本机，不上传到页面源码）
+let cloudReady=false;              // 后端接口是否可用
+let lastRemote=0;                  // 最近一次确认的云端数据时间戳
+let pushTimer=null;
+function getAdminToken(){return localStorage.getItem(ADMIN_KEY)||''}
+function updateSyncBtn(){
+  const b=document.getElementById('syncBtn');if(!b)return;
+  const unlocked=!!getAdminToken();
+  b.textContent=unlocked?'☁️':'🔒';
+  b.title=unlocked?'云端同步已解锁（点击锁定）':'云端同步未解锁（点击输入管理员密码）';
+}
+/* 打开页面时从云端拉取最新链接数据；失败则静默使用本机数据 */
+async function pullFromCloud(){
+  try{
+    const r=await fetch('/api/links',{cache:'no-store'});
+    if(!r.ok)return;
+    const d=await r.json();
+    cloudReady=true;
+    if(d&&Array.isArray(d.sites)&&d.sites.length&&(d.updatedAt||0)>lastRemote){
+      lastRemote=d.updatedAt;
+      sites=d.sites;
+      folders=Array.isArray(d.folders)?d.folders:[...new Set(sites.map(s=>s.folder).filter(Boolean))];
+      if(d.theme)theme=d.theme;
+      if(currentFolder!=='all'&&!folders.includes(currentFolder))currentFolder='all';
+      saveLocal();applyTheme();render();
+    }
+  }catch(e){/* 后端未部署或网络异常：保持本机数据 */}
+}
+/* 保存后同步推送到云端（仅在已解锁管理员密码时；防抖 600ms） */
+function pushToCloud(){
+  const tok=getAdminToken();if(!tok)return;   // 未解锁：只存本浏览器
+  clearTimeout(pushTimer);
+  pushTimer=setTimeout(async()=>{
+    try{
+      const r=await fetch('/api/links',{method:'PUT',headers:{'Content-Type':'application/json','X-Admin-Token':tok},body:JSON.stringify({sites,folders,theme})});
+      if(r.status===401){localStorage.removeItem(ADMIN_KEY);updateSyncBtn();toast('管理员密码已失效，同步已锁定');return}
+      if(!r.ok){toast('云端同步失败，本次修改仅保存在本机');return}
+      const d=await r.json();if(d&&d.updatedAt)lastRemote=d.updatedAt;
+      cloudReady=true;
+    }catch(e){toast('网络异常，本次修改仅保存在本机')}
+  },600);
+}
+/* 点击顶栏同步按钮：解锁 / 锁定 */
+async function toggleSync(){
+  if(getAdminToken()){
+    if(confirm('锁定云端同步？锁定后你的修改只保存在本浏览器。')){
+      localStorage.removeItem(ADMIN_KEY);updateSyncBtn();toast('已锁定云端同步');
+    }
+    return;
+  }
+  const p=prompt('输入管理员密码解锁云端同步。\n解锁后你添加/删除的网址会推送给所有访客：');
+  if(!p)return;
+  localStorage.setItem(ADMIN_KEY,p);updateSyncBtn();
+  // 立即用一次真实推送验证密码并把当前数据作为云端初始数据
+  try{
+    const r=await fetch('/api/links',{method:'PUT',headers:{'Content-Type':'application/json','X-Admin-Token':p},body:JSON.stringify({sites,folders,theme})});
+    if(r.status===401){localStorage.removeItem(ADMIN_KEY);updateSyncBtn();toast('密码错误，未解锁');return}
+    if(!r.ok){toast('云端服务未就绪（请确认已绑定 KV 并重新部署），密码已暂存本机');return}
+    const d=await r.json();if(d&&d.updatedAt)lastRemote=d.updatedAt;
+    cloudReady=true;toast('已解锁，当前数据已同步到云端 ☁️');
+  }catch(e){toast('无法连接云端（请确认后端已部署），密码已暂存本机')}
+}
 function getDom(u){try{return new URL(u).hostname}catch(e){return''}}
 
 function iconSrc(dom){
@@ -1934,6 +2000,10 @@ const se=localStorage.getItem('navEng');if(se)document.getElementById('engine').
 // 恢复上次的图标缩放
 const savedZ=localStorage.getItem('navZoom');if(savedZ){zoomLevel=parseFloat(savedZ);applyZoom()}
 render();
+/* 云端同步：注册按钮事件并拉取云端最新数据 */
+document.getElementById('syncBtn').addEventListener('click',toggleSync);
+updateSyncBtn();
+pullFromCloud();
 document.addEventListener('mouseleave',()=>{dot.style.opacity='0';ring.style.opacity='0'});
 document.addEventListener('mouseenter',()=>{dot.style.opacity='1';ring.style.opacity='1'});
 document.addEventListener('dragstart',e=>{const a=e.target.closest('a');if(a&&!a.classList.contains('desk-icon'))e.preventDefault()});
