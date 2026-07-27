@@ -1,0 +1,9 @@
+{
+  "manifest_version": 3,
+  "name": "我的导航 - 新标签页",
+  "version": "1.0",
+  "description": "打开新标签页时自动跳转到本地的 我的导航.html",
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
+  }
+}
