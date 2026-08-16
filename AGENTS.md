@@ -9,8 +9,10 @@
 - `wrangler.toml`：Workers 配置（assets 指向 `public/`，KV 绑定）。
 
 页面数据：
-- 链接/文件夹/主题：线上部署时以 KV 为准（启动时拉取，管理员解锁后推送）；
-  本地打开时 `/api/links` 不可用，静默回退到 localStorage（键 `nav_v9`）。
+- 链接/文件夹/主题：以 KV 为准（启动时拉取，管理员解锁后推送）。页面里 API 用
+  绝对地址 `https://my-navigation-page.2720013241.workers.dev/api/links`，
+  Worker 已开 CORS，因此 file:// 和 http://127.0.0.1:8137 打开也能直接云同步；
+  仅网络异常时静默回退到 localStorage（键 `nav_v9`）。
 - 其他 localStorage 键：`navBg3`、`navEng`、`navZoom`、`navPerf`、`navSpring`、管理员 token。
 - IndexedDB：库 `navWallpapers` / store `wallpapers`（壁纸 Blob，keyPath `id`）。
 - 数据与 origin 绑定：file://、http://127.0.0.1:8137、线上域名各是一份。

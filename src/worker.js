@@ -3,17 +3,26 @@
 //
 // GET  /api/links   所有人可读，返回 { sites, folders, theme, updatedAt }
 // PUT  /api/links   需请求头 X-Admin-Token 与 Secret ADMIN_TOKEN 一致
+// 支持 CORS：页面从 file:// 或 http://127.0.0.1:8137 打开时也能跨域调用
 //
 // 配置：wrangler.toml 中的 [[kv_namespaces]] 绑定 LINKS_KV
 // 密钥：wrangler secret put ADMIN_TOKEN
 
 const KV_KEY = 'navlinks_v1';
 
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Admin-Token',
+  'Access-Control-Max-Age': '86400'
+};
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
     if (url.pathname === '/api/links') {
+      if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
       if (request.method === 'GET') return handleGet(env);
       if (request.method === 'PUT') return handlePut(request, env);
       return json({ error: 'method not allowed' }, 405);
@@ -29,7 +38,7 @@ async function handleGet(env) {
   const raw = await env.LINKS_KV.get(KV_KEY);
   if (!raw) return json({ sites: [], folders: [], theme: 'dark', updatedAt: 0 });
   return new Response(raw, {
-    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...CORS }
   });
 }
 
@@ -66,6 +75,6 @@ async function handlePut(request, env) {
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
     status,
-    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...CORS }
   });
 }
